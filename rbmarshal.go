@@ -91,11 +91,9 @@ func validateVersion(r *bufio.Reader) error {
 	}
 
 	if version != marshalVersion {
-		return errors.New(
-			fmt.Sprintf(
-				"unsupported marshal version %v, wanted %v",
-				version, marshalVersion,
-			),
+		return fmt.Errorf(
+			"unsupported marshal version %v, wanted %v",
+			version, marshalVersion,
 		)
 	}
 
