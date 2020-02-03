@@ -392,6 +392,24 @@ func TestLoad(t *testing.T) {
 			),
 		},
 		{
+			"Array with regexps",
+			[]byte{
+				0x04, 0x08, 0x5b, 0x09, 0x49, 0x2f, 0x00, 0x00,
+				0x06, 0x3a, 0x06, 0x45, 0x46, 0x49, 0x2f, 0x00,
+				0x00, 0x06, 0x3b, 0x00, 0x46, 0x49, 0x22, 0x00,
+				0x06, 0x3b, 0x00, 0x54, 0x69, 0x06,
+			},
+			nil,
+
+			// [//, //, "", 1]
+			makeSlice(
+				regexp.MustCompile(""),
+				regexp.MustCompile(""),
+				"",
+				1,
+			),
+		},
+		{
 			"Positive float number",
 			[]byte{0x04, 0x08, 0x66, 0x09, 0x33, 0x2e, 0x31, 0x34},
 			nil,
@@ -545,11 +563,11 @@ func TestLoad(t *testing.T) {
 					t.Errorf("c.data: error asserting the type of %d", d)
 					return
 				}
-				if !cmp.Equal(v, d) {
+				if !cmp.Equal(v, d, cmp.Comparer(equalRegexps)) {
 					t.Errorf("data: got %d, want %d", v, c.data)
 				}
 			case *regexp.Regexp:
-				if v.String() != c.data.(*regexp.Regexp).String() {
+				if !equalRegexps(v, c.data.(*regexp.Regexp)) {
 					t.Errorf("data: got %s, want %s", v, c.data)
 				}
 			default:
@@ -568,4 +586,8 @@ func makeSlice(args ...interface{}) []interface{} {
 	}
 
 	return s
+}
+
+func equalRegexps(x, y *regexp.Regexp) bool {
+	return x.String() == y.String()
 }

@@ -67,6 +67,14 @@ const (
 	// typeLink = '@'
 )
 
+const (
+	encStart  = 0x06
+	semicolon = 0x3b
+	colon     = 0x3a
+)
+
+var encodingHeader = [2]byte{0x3a, 0x3b}
+
 func Load(r *bufio.Reader) (interface{}, error) {
 	if err := validateVersion(r); err != nil {
 		return nil, err
@@ -374,6 +382,14 @@ func readRegexp(r *bufio.Reader) (*regexp.Regexp, error) {
 	default:
 		// Other cases invlove Regexp encoding, which we don't care
 		// about at the moment.
+	}
+
+	bytes, err := r.Peek(2)
+	if err != nil {
+		return regexp.MustCompile(""), err
+	}
+	if bytes[0] == encStart && (bytes[1] == colon || bytes[1] == semicolon) {
+		stripEncoding(r)
 	}
 
 	return regexp.Compile(str)
