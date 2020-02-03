@@ -53,15 +53,15 @@ const (
 	typeString = '"'
 	typeRegexp = '/'
 	typeArray  = '['
-	// typeHash       = '{'
+	typeHash   = '{'
 	// typeHashDef    = '}'
 	// typeStruct     = 'S'
 	// typeModuleOld  = 'M'
 	// typeClass      = 'c'
 	// typeModule     = 'm'
 
-	// typeSymbol  = ':'
-	// typeSymlink = ';'
+	typeSymbol  = ':'
+	typeSymlink = ';'
 
 	typeIvar = 'I'
 	// typeLink = '@'
@@ -73,14 +73,16 @@ const (
 	colon     = 0x3a
 )
 
-var encodingHeader = [2]byte{0x3a, 0x3b}
+type LoadArg struct {
+	Symbols []string
+}
 
 func Load(r *bufio.Reader) (interface{}, error) {
 	if err := validateVersion(r); err != nil {
 		return nil, err
 	}
 
-	return read(r)
+	return read(r, new(LoadArg))
 }
 
 func validateVersion(r *bufio.Reader) error {
@@ -100,7 +102,7 @@ func validateVersion(r *bufio.Reader) error {
 	return nil
 }
 
-func read(r *bufio.Reader) (interface{}, error) {
+func read(r *bufio.Reader, arg *LoadArg) (interface{}, error) {
 	byte, err := r.ReadByte()
 	if err != nil {
 		return nil, err
@@ -114,19 +116,25 @@ func read(r *bufio.Reader) (interface{}, error) {
 	case typeFalse:
 		return false, nil
 	case typeFixnum:
-		return readFixnum(r)
+		return readFixnum(r, arg)
 	case typeBignum:
-		return readBignum(r)
+		return readBignum(r, arg)
 	case typeString:
-		return readString(r)
+		return readString(r, arg)
 	case typeArray:
-		return readArray(r)
+		return readArray(r, arg)
 	case typeFloat:
-		return readFloat(r)
+		return readFloat(r, arg)
 	case typeIvar:
-		return readIvar(r)
+		return readIvar(r, arg)
 	case typeRegexp:
-		return readRegexp(r)
+		return readRegexp(r, arg)
+	case typeSymbol:
+		return readSymbol(r, arg)
+	case typeSymlink:
+		return readSymlink(r, arg)
+	case typeHash:
+		return readHash(r, arg)
 	default:
 		fmt.Printf("unsupported type byte: %v\n", byte)
 	}
@@ -134,7 +142,7 @@ func read(r *bufio.Reader) (interface{}, error) {
 	return nil, nil
 }
 
-func readFixnum(r *bufio.Reader) (int, error) {
+func readFixnum(r *bufio.Reader, arg *LoadArg) (int, error) {
 	b, err := r.ReadByte()
 	if err != nil {
 		return 0, err
@@ -180,7 +188,7 @@ func readFixnum(r *bufio.Reader) (int, error) {
 	return 0, nil
 }
 
-func readBignum(r *bufio.Reader) (int, error) {
+func readBignum(r *bufio.Reader, arg *LoadArg) (int, error) {
 	sign, err := r.ReadByte()
 	if err != nil {
 		return 0, err
@@ -213,7 +221,7 @@ func readBignum(r *bufio.Reader) (int, error) {
 	}
 }
 
-func readIvar(r *bufio.Reader) (interface{}, error) {
+func readIvar(r *bufio.Reader, arg *LoadArg) (interface{}, error) {
 	bytes, err := r.Peek(1)
 	if err != nil {
 		return "", err
@@ -222,13 +230,13 @@ func readIvar(r *bufio.Reader) (interface{}, error) {
 	b := bytes[0]
 	switch b {
 	case typeString:
-		return readString(r)
+		return readString(r, arg)
 	default:
-		return read(r)
+		return read(r, arg)
 	}
 }
 
-func readString(r *bufio.Reader) (string, error) {
+func readString(r *bufio.Reader, arg *LoadArg) (string, error) {
 	bytes, err := r.Peek(1)
 	if err != nil {
 		return "", err
@@ -236,7 +244,7 @@ func readString(r *bufio.Reader) (string, error) {
 
 	b := bytes[0]
 	if b != typeString {
-		return readBinaryString(r)
+		return readBinaryString(r, arg)
 	}
 
 	// Skip the typeString byte.
@@ -244,11 +252,11 @@ func readString(r *bufio.Reader) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return readEncodedString(r)
+	return readEncodedString(r, arg)
 }
 
-func readBinaryString(r *bufio.Reader) (string, error) {
-	len, err := readFixnum(r)
+func readBinaryString(r *bufio.Reader, arg *LoadArg) (string, error) {
+	len, err := readFixnum(r, arg)
 	if err != nil {
 		return "", err
 	}
@@ -262,8 +270,8 @@ func readBinaryString(r *bufio.Reader) (string, error) {
 	return string(str), nil
 }
 
-func readEncodedString(r *bufio.Reader) (string, error) {
-	len, err := readFixnum(r)
+func readEncodedString(r *bufio.Reader, arg *LoadArg) (string, error) {
+	len, err := readFixnum(r, arg)
 	if err != nil {
 		return "", err
 	}
@@ -274,7 +282,7 @@ func readEncodedString(r *bufio.Reader) (string, error) {
 		return "", err
 	}
 
-	if err = stripEncoding(r); err != nil {
+	if err = stripEncoding(r, arg); err != nil {
 		return "", err
 	}
 
@@ -283,7 +291,7 @@ func readEncodedString(r *bufio.Reader) (string, error) {
 
 // Encoding is not used anywhere at the moment, so we just move the pointer
 // forwards.
-func stripEncoding(r *bufio.Reader) error {
+func stripEncoding(r *bufio.Reader, arg *LoadArg) error {
 	var signature [2]byte
 	_, err := io.ReadFull(r, signature[:])
 	if err != nil {
@@ -313,15 +321,15 @@ func stripEncoding(r *bufio.Reader) error {
 	return nil
 }
 
-func readArray(r *bufio.Reader) ([]interface{}, error) {
-	size, err := readFixnum(r)
+func readArray(r *bufio.Reader, arg *LoadArg) ([]interface{}, error) {
+	size, err := readFixnum(r, arg)
 	if err != nil {
 		return make([]interface{}, 0), err
 	}
 
 	arr := make([]interface{}, size)
 	for i := 0; i < size; i++ {
-		arr[i], err = read(r)
+		arr[i], err = read(r, arg)
 		if err != nil {
 			return arr, err
 		}
@@ -330,8 +338,8 @@ func readArray(r *bufio.Reader) ([]interface{}, error) {
 	return arr, nil
 }
 
-func readFloat(r *bufio.Reader) (float64, error) {
-	str, err := readString(r)
+func readFloat(r *bufio.Reader, arg *LoadArg) (float64, error) {
+	str, err := readString(r, arg)
 	if err != nil {
 		return 0, err
 	}
@@ -351,8 +359,8 @@ func readFloat(r *bufio.Reader) (float64, error) {
 	}
 }
 
-func readRegexp(r *bufio.Reader) (*regexp.Regexp, error) {
-	str, err := readString(r)
+func readRegexp(r *bufio.Reader, arg *LoadArg) (*regexp.Regexp, error) {
+	str, err := readString(r, arg)
 	if err != nil {
 		return regexp.MustCompile(""), err
 	}
@@ -387,8 +395,60 @@ func readRegexp(r *bufio.Reader) (*regexp.Regexp, error) {
 		return regexp.MustCompile(""), err
 	}
 	if bytes[0] == encStart && (bytes[1] == colon || bytes[1] == semicolon) {
-		stripEncoding(r)
+		stripEncoding(r, arg)
 	}
 
 	return regexp.Compile(str)
+}
+
+// Returns strings for now but if this library will ever support encoding, we
+// will need a proper solution, so that we don't dump strings when they should
+// be symbols.
+func readSymbol(r *bufio.Reader, arg *LoadArg) (string, error) {
+	s, err := readString(r, arg)
+	if err != nil {
+		return "", err
+	}
+	arg.Symbols = append(arg.Symbols, s)
+	return s, nil
+}
+
+func readSymlink(r *bufio.Reader, arg *LoadArg) (string, error) {
+	i, err := readFixnum(r, arg)
+	if err != nil {
+		return "", err
+	}
+	return arg.Symbols[i], nil
+}
+
+func readHash(r *bufio.Reader, arg *LoadArg) (map[string]interface{}, error) {
+	size, err := readFixnum(r, arg)
+	if err != nil {
+		return map[string]interface{}{}, err
+	}
+
+	hash := make(map[string]interface{}, size)
+	for i := 0; i < size; i++ {
+		key, err := read(r, arg)
+		if err != nil {
+			return hash, err
+		}
+		val, err := read(r, arg)
+		if err != nil {
+			return hash, err
+		}
+
+		var k string
+		switch key := key.(type) {
+		case string:
+			k = key
+		case int:
+			k = strconv.Itoa(key)
+		default:
+			k = ""
+		}
+		hash[k] = val
+	}
+
+	return hash, nil
 }
