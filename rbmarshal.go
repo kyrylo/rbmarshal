@@ -63,8 +63,8 @@ const (
 	typeSymbol  = ':'
 	typeSymlink = ';'
 
-	typeIvar = 'I'
-	// typeLink = '@'
+	typeIvar    = 'I'
+	typeObjlink = '@'
 )
 
 const (
@@ -75,6 +75,7 @@ const (
 
 type LoadArg struct {
 	Symbols []string
+	Objects []interface{}
 }
 
 func Load(r *bufio.Reader) (interface{}, error) {
@@ -135,6 +136,8 @@ func read(r *bufio.Reader, arg *LoadArg) (interface{}, error) {
 		return readSymlink(r, arg)
 	case typeHash:
 		return readHash(r, arg)
+	case typeObjlink:
+		return readObjlink(r, arg)
 	default:
 		fmt.Printf("unsupported type byte: %v\n", byte)
 	}
@@ -252,7 +255,14 @@ func readString(r *bufio.Reader, arg *LoadArg) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return readEncodedString(r, arg)
+
+	encodedStr, err := readEncodedString(r, arg)
+	if err != nil {
+		return "", err
+	}
+	arg.Objects = append(arg.Objects, encodedStr)
+
+	return encodedStr, nil
 }
 
 func readBinaryString(r *bufio.Reader, arg *LoadArg) (string, error) {
@@ -398,7 +408,13 @@ func readRegexp(r *bufio.Reader, arg *LoadArg) (*regexp.Regexp, error) {
 		stripEncoding(r, arg)
 	}
 
-	return regexp.Compile(str)
+	x, err := regexp.Compile(str)
+	if err != nil {
+		return regexp.MustCompile(""), err
+	}
+	arg.Objects = append(arg.Objects, x)
+
+	return x, nil
 }
 
 // Returns strings for now but if this library will ever support encoding, we
@@ -451,4 +467,12 @@ func readHash(r *bufio.Reader, arg *LoadArg) (map[string]interface{}, error) {
 	}
 
 	return hash, nil
+}
+
+func readObjlink(r *bufio.Reader, arg *LoadArg) (interface{}, error) {
+	i, err := readFixnum(r, arg)
+	if err != nil {
+		return "", err
+	}
+	return arg.Objects[i-1], nil
 }
