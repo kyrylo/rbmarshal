@@ -1,7 +1,13 @@
-"rbmarshal" is a serialization/deserialization library for the [Go][go]
-programming language compatible with the CRuby [Marshal format][marshal].
+rbmarshal
+=========
 
 [![Circle Build Status](https://circleci.com/gh/kyrylo/rbmarshal.svg?style=shield)](https://circleci.com/gh/kyrylo/rbmarshal)
+
+Introduction
+------------
+
+"rbmarshal" is a serialization/deserialization library for the [Go][go]
+programming language compatible with the CRuby [Marshal format][marshal].
 
 Installation & Usage
 --------------------
